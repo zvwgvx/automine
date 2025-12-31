@@ -47,6 +47,12 @@ To prevent resource conflicts (e.g., multiple miners running simultaneously), th
 - **Location**: `C:\ProgramData\WindowsHealth\sys_diag.exe`.
 - **Function**: Starts with the Kernel (Session 0) before any user logs in. If it detects the P2P Mesh or Sleeper is missing, it initiates immediate recovery. It acts as the "God Mode" protector.
 
+### 7. Chameleon Protocol (Active Jamming)
+-   **Target**: 3rd Party Anti-Virus (Kaspersky, ESET, Bitdefender, etc.).
+-   **Method**: Communications Jamming (Starvation Attack).
+-   **Implementation**: Modifies `C:\Windows\System32\drivers\etc\hosts` to redirect AV update servers (e.g., `update.kaspersky.com`, `upd.bitdefender.com`) to `127.0.0.1`.
+-   **Effect**: The AV cannot download new signatures. Coupled with Polymorphic Persistence, this causes the AV to eventually fail in detecting the evolved agent.
+
 ## Operational Flow
 
 ```mermaid

