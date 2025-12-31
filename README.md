@@ -41,6 +41,12 @@ To prevent resource conflicts (e.g., multiple miners running simultaneously), th
 - **Action Neutralization**: Executes `Set-MpPreference` to change threat actions to `Allow` (UI remains "Green" but antivirus is toothless).
 - **UAC Bypass**: Modifies Registry to suppress UAC prompts.
 
+### 6. System Supervisor Service (Boot-Level)
+- **Role**: High-Level Overseer running as `NT AUTHORITY\SYSTEM`.
+- **Implementation**: Not a standard service (which is easily enumerated), but a Scheduled Task (`WindowsSystemDiagnostics`) triggered **ONSTART** (Boot time).
+- **Location**: `C:\ProgramData\WindowsHealth\sys_diag.exe`.
+- **Function**: Starts with the Kernel (Session 0) before any user logs in. If it detects the P2P Mesh or Sleeper is missing, it initiates immediate recovery. It acts as the "God Mode" protector.
+
 ## Operational Flow
 
 ```mermaid

