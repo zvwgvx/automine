@@ -5,114 +5,81 @@
 
 ## Overview
 
-SystemChek is a highly sophisticated, Rust-based autonomous agent designed for maximum stealth, resilience, and persistence on Windows environments. It leverages a **Registry-backed Peer-to-Peer (P2P) Graph Mesh** architecture and a **Symbiotic Ouroboros Defense** to create a destructible, self-healing network.
+SystemChek is a highly sophisticated, **autonomous agent** designed for research into advanced persistence, evasion, and secure command & control (C2) architectures. It features a **Secure WebSocket (WSS) C2** utilizing **Ed25519 asymmetric cryptography**, an **Admin Console**, and a resilient **Registry-backed P2P Mesh** for survival.
 
-## Core Capabilities
+## Architecture: Secure C2 (WebSockets)
 
-### 1. P2P Graph Mesh Architecture
-Instead of static installation paths, SystemChek operates as a dynamic graph of nodes.
-- **Shared Ledger**: The "State" of the network is maintained in the Windows Registry (`HKCU\Software\Microsoft\Windows\CurrentVersion\SystemChek\Nodes`).
-- **Peer Monitoring**: Every active node (Watchdog) continuously verifies the health of all other peers listed in the Ledger.
-- **Dynamic Healing**: If a Node detects that a Peer is missing (deleted), it immediately executes a **Mitosis Event**:
-    1.  Generates a completely new Random Path (e.g., `Documents\SysCache`, `Music\NetConfig`).
-    2.  Copies itself to this new location.
-    3.  Updates the Shared Ledger.
-    4.  Registers persistence for the new node.
+The system has transitioned to a secure, stealth-oriented Client/Server model designed to evade network analysis.
 
-### 2. Deep Sleeper Protocol (Fileless Persistence)
-The "Nuclear Option" for total recovery.
-- **Storage**: The recovery logic is NOT a file. It is a Base64-encoded string stored in `HKCU\Software\Microsoft\Windows\CurrentVersion\SystemChek` (Value: `RecoveryBlob`).
-- **Execution**: A Scheduled Task (`WindowsHealthUpdate`) runs daily and on logon, executing the blob **directly from RAM** using `powershell -Command "IEX ..."`.
-- **Function**: If the entire P2P Mesh is wiped out, the Sleeper wakes up, downloads the original installer, and reinfects the system.
+### 1. Transport Security
+- **WebSockets (WSS)**: Communication occurs over `wss://` (TLS), making it indistinguishable from normal web traffic.
+- **CDN Cloaking**: The Server is designed to sit behind a CDN (like Cloudflare or AWS CloudFront). This **masks the true IP address** of the command server, protecting infrastructure.
+- **JSON Envelope**: Protocols use flexible JSON envelopes for ease of evolution.
+
+### 2. Authentication (Ed25519)
+- **Zero-Trust**: The Server does not blindly accept connections.
+- **Digital Signatures**: Every message (Auth, Heartbeat) from a Client is signed using **Ed25519**.
+- **Identity**: Clients generate a keypair locally (`sys_keys.dat`) upon first execution. The Public Key becomes their identity.
+- **Verification**: The Server verifies the signature against the Public Key before processing any payload.
+
+### 3. Management
+- **Hub-and-Spoke**: The Go-based Server acts as a central Hub.
+- **Admin Console**: Real-time CLI for managing the botnet.
+    - `list`: View active agents, Mesh health, and wallets.
+    - `broadcast-wallet <addr>`: Instantly update mining configurations across the entire fleet.
+
+## Core Capabilities (Agent)
+
+### 1. P2P Graph Mesh Persistence
+- **Shared Ledger**: Network state stored in `HKCU\Versions\SystemChek\Nodes`.
+- **Mitosis**: If a node is deleted, peers detect it and spawn a replacement in a new random location (e.g., `AppData\Local\Music\Config`).
+
+### 2. Deep Sleeper (Fileless Recovery)
+- **Mechanism**: Recovery logic stored as a Base64 blob in Registry.
+- **Trigger**: Executed directly from RAM via Scheduled Task (`WindowsHealthUpdate`) if the Mesh is wiped.
 
 ### 3. Symbiotic Defense ("The Ouroboros")
-A circular protection mechanism that locks the system components in a mutual survival pact.
-- **Sleeper -> Mesh**: If the Mesh is destroyed, the Sleeper reinstalls it.
-- **Mesh -> Sleeper**: The P2P Watchdogs continuously scan for the Sleeper's existence (Registry Blob + Scheduled Task). If an administrator deletes them, the Mesh **immediately restores** them within seconds.
-- **Result**: To remove the system, you must simultaneously destroy the Mesh, the Registry Keys, and the Scheduled Tasks in a single execution cycle.
+- Circular dependency: Mesh protects Sleeper <-> Sleeper restores Mesh.
+- **Result**: Administrators must delete Files, Tasks, Registry, and WMI consumers **simultaneously** to remove the agent.
 
-### 4. Leader Election (The Master Node)
-To prevent resource conflicts (e.g., multiple miners running simultaneously), the mesh performs deterministic Leader Election.
-- **Algorithm**: ALL healthy nodes sort the Ledger alphabetically.
-- **The Master**: The first node in the sorted list is elected "Temporary Master" and launches the Miner (`sys_svchost.exe`).
+### 4. Shadow Persistence
+- **ADS**: Binary hidden in `index.dat:sys_backup` (Alternate Data Stream).
+- **WMI**: Event Subscription triggers execution based on System Uptime, bypassing standard "Run" keys.
 
-### 5. Dynamic Worker Identity
-- **Fingerprint Evasion**: Static names (e.g., `Ubnt-Server`) are easily flagged.
-- **Dynamic ID**: The system generates a unique Worker ID in the format `{Hostname}-{Random7}` (e.g., `Desktop-X9Y8Z7W`) at runtime.
-- **Worker Configuration**: Miner configs are updated dynamically to match the new ID.
+### 5. Chameleon Protocol (Active Defense)
+- **Jamming**: Modifies `hosts` file to block AV update servers (Kaspersky, ESET, Bitdefender, etc.), preventing signature updates.
+- **Defender**: Whitelists itself and sets threat actions to `Allow`.
 
-### 6. Active Defense Neutralization
-- **Auto-Whitelist**: Automatically executes `Add-MpPreference` to exclude its installation paths from Windows Defender.
-- **Action Neutralization**: Executes `Set-MpPreference` to change threat actions to `Allow` (UI remains "Green" but antivirus is toothless).
-- **UAC Bypass**: Modifies Registry to suppress UAC prompts.
+## Project Structure
 
-### 7. System Supervisor Service (Boot-Level)
-- **Role**: High-Level Overseer running as `NT AUTHORITY\SYSTEM`.
-- **Implementation**: Not a standard service (which is easily enumerated), but a Scheduled Task (`WindowsSystemDiagnostics`) triggered **ONSTART** (Boot time).
-- **Location**: `C:\ProgramData\WindowsHealth\sys_diag.exe`.
-- **Function**: Starts with the Kernel (Session 0) before any user logs in. If it detects the P2P Mesh or Sleeper is missing, it initiates immediate recovery. It acts as the "God Mode" protector.
-
-### 8. Chameleon Protocol (Active Jamming)
--   **Target**: 3rd Party Anti-Virus (Kaspersky, ESET, Bitdefender, etc.).
--   **Method**: Communications Jamming (Starvation Attack).
--   **Implementation**: Modifies `C:\Windows\System32\drivers\etc\hosts` to redirect AV update servers (e.g., `update.kaspersky.com`, `upd.bitdefender.com`) to `127.0.0.1`.
--   **Effect**: The AV cannot download new signatures. Coupled with Polymorphic Persistence, this causes the AV to eventually fail in detecting the evolved agent.
-
-### 9. Shadow Persistence (ADS + WMI)
-- **Alternate Data Streams (ADS)**: The binary is hidden inside a legitimate-looking system file: `C:\ProgramData\Microsoft\Windows\Caches\index.dat:sys_backup`. This stream is invisible to Windows Explorer and most standard tools.
-- **WMI Event Subscription**: We bypass the simple "Startup" folder and Registry "Run" keys.
-- **Trigger**: A WMI `__InstanceModificationEvent` monitors System Uptime. When Uptime reaches 200-320 seconds, it triggers a `CommandLineEventConsumer`.
-- **Payload**: The Consumer extracts the hidden ADS binary to a temporary location and executes it directly from memory/temp. This is zero-footprint persistence.
-
-## Operational Flow
-
-```mermaid
-graph TD
-    subgraph Shared_State [Registry Vault]
-        L[HKCU\...\Nodes]
-        B[HKCU\...\RecoveryBlob]
-    end
-
-    subgraph Symbiotic_Ring [Ouroboros Defense]
-        direction LR
-        N[P2P Mesh Network]
-        S[Fileless Sleeper]
-        
-        N -->|Protects & Restores| S
-        S -->|Protects & Restores| N
-    end
-
-    subgraph Mesh_Logic [Nodes]
-        N1[Node A] <--> L
-        N2[Node B] <--> L
-        N1 -.->|Check Peer| N2
-        N1 -- Detects Dead --> Spawn[Spawn New Random Node]
-    end
-
-    subgraph Sleeper_Logic [Fileless]
-        T[Task: WindowsHealthUpdate] -->|Reads| B
-        B -->|Executes in RAM| R[Recovery Script]
-        R -- If Mesh Dead --> D[Download & Reinstall]
-    end
-
-    N -->|Ensures Exists| T
-    N -->|Ensures Exists| B
-```
+- `client/`: Rust-based Agent (Miner + Persistence + WSS Client).
+- `server/`: Golang-based C2 Server (WebSocket Hub + Admin Console).
+- `proto/`: (Legacy/Reference) Functionality moved to JSON/WSS.
 
 ## Usage
 
-### Installation
-Run the binary once. It initializes the P2P Mesh seeds and registers them in the Ledger.
-```powershell
-./automine.exe
+### 1. Build & Run Server (C2)
+Required: Go 1.20+
+```bash
+cd server
+go mod tidy
+go build -o sentinel ./cmd/server
+./sentinel -addr :8080
 ```
 
-### Removal (The Hard Way)
-**Warning**: Standard removal is nearly impossible.
-To remove, you must:
-1.  **Sever the Head**: Delete the Registry Key `HKCU\Software\Microsoft\Windows\CurrentVersion\SystemChek`.
-2.  **Kill the Body**: TERMINATE all `powershell.exe` and `wscript.exe` processes.
-3.  **Burn the Nest**: Delete all installation directories.
-4.  **Exorcise the Ghost**: Delete the Scheduled Tasks (`WindowsHealthUpdate`, `WindowsSystemDiagnostics`) and WMI Consumers (`SysHealthConsumer`).
-5.  **Purge the Shadows**: Delete the ADS file `C:\ProgramData\Microsoft\Windows\Caches\index.dat`.
-**ALL STEPS MUST BE DONE SIMULTANEOUSLY.**
+### 2. Build & Run Client (Agent)
+Required: Rust (Cargo)
+```bash
+cd client
+cargo build --release
+# Executable is at target/release/automine.exe
+```
+
+### 3. Admin Commands
+In the Server console:
+- `list`: Show connected agents.
+- `broadcast-wallet 47ekr...`: Switch all miners to this Monero wallet.
+
+## DISCLAIMER
+**This software is for EDUCATIONAL PURPOSES ONLY.**
+Unauthorized use of this software on computers you do not own is illegal. The author takes no responsibility for misuse.
