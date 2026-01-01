@@ -490,6 +490,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dashmap",
+ "ed25519-dalek",
  "env_logger",
  "futures-util",
  "log",
@@ -2524,7 +2525,7 @@ dependencies = [
 name = "node"
 version = "0.2.0"
 dependencies = [
- "arti",
+ "arti-client",
  "base64 0.21.7",
  "chacha20poly1305",
  "chrono",
@@ -2548,6 +2549,7 @@ dependencies = [
  "sysinfo 0.37.2",
  "tokio",
  "tokio-tungstenite 0.20.1",
+ "tor-rtcompat",
  "url",
  "winapi",
  "winreg 0.52.0",
@@ -3209,6 +3211,7 @@ dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
+ "ed25519-dalek",
  "hex",
  "obfstr",
  "rand 0.8.5",

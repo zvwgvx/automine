@@ -104,3 +104,35 @@ impl GhostPacket {
         serde_json::from_str(&json).ok()
     }
 }
+
+use ed25519_dalek::{Verifier, VerifyingKey, Signature};
+
+/// Helper to verify Ed25519 Signatures (Hex encoded)
+pub fn verify_signature(pub_hex: &str, data: &[u8], sig_hex: &str) -> bool {
+    let pub_bytes = match hex::decode(pub_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    // VerifyingKey::from_bytes returns Result
+    let pub_key = match pub_bytes.try_into() {
+        Ok(arr) => match VerifyingKey::from_bytes(&arr) {
+            Ok(k) => k,
+            Err(_) => return false,
+        },
+        Err(_) => return false,
+    };
+
+    let sig_bytes = match hex::decode(sig_hex) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    
+    let sig_arr: [u8; 64] = match sig_bytes.try_into() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+    
+    let signature = Signature::from_bytes(&sig_arr);
+
+    pub_key.verify(data, &signature).is_ok()
+}

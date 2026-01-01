@@ -29,8 +29,9 @@ protocol = { version = "0.1.0", path = "../protocol" }
 lru = "0.16.2"
 rand_core = "0.6.4"
 obfstr = "0.4.4"
-arti = "1.8.0"
 chrono = "0.4.42"
+arti-client = "0.37.0"
+tor-rtcompat = { version = "0.37.0", features = ["tokio", "native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

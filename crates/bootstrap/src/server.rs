@@ -37,8 +37,14 @@ async fn handle_connection(peers: PeerMap, stream: TcpStream, _addr: SocketAddr)
             if let Ok(mesh_msg) = serde_json::from_str::<MeshMsg>(&text) {
                 match mesh_msg {
                     MeshMsg::Register(reg) => {
-                        // TODO: Verify Signature (reg.signature signs "Register:<onion>")
-                        // For now, assume valid.
+                        // 1. Verify Signature
+                        // Signed Data = "Register:<onion_address>"
+                        let data = format!("Register:{}", reg.onion_address);
+                        if !protocol::verify_signature(&reg.pub_key, data.as_bytes(), &reg.signature) {
+                             println!("[-] Invalid Signature from {}", reg.pub_key);
+                             return;
+                        }
+
                         let info = PeerInfo {
                             pub_key: reg.pub_key.clone(),
                             onion_address: reg.onion_address,
