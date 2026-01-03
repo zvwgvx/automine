@@ -17,6 +17,11 @@ pub enum MeshMsg {
     
     /// Node <-> Node / Ghost -> Node: "Broadcast this command"
     Gossip(GossipMsg),
+    
+    /// Node -> Node: "Do you know this bot?"
+    FindBot { target_id: String },
+    /// Node -> Node: "Yes, I know these closest nodes"
+    FoundBot { nodes: Vec<PeerInfo> },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

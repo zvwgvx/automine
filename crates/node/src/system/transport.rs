@@ -35,7 +35,8 @@ impl ActivePool {
         &mut self, 
         tor: &TorClient<PreferredRuntime>, 
         onion: &str, 
-        msg_json: String
+        msg_json: String,
+        protected_peers: &[String]
     ) -> Result<(), String> {
         
         // 1. FAST PATH (Hit)
@@ -58,7 +59,7 @@ impl ActivePool {
         // 2. SLOW PATH (Miss) - Connect
         // Check eviction (Simplified LRU: remove oldest)
         if self.streams.len() >= MAX_POOL_SIZE {
-            self.evict_one();
+            self.evict_one(protected_peers);
         }
 
         let host = onion.to_string(); 
@@ -87,19 +88,17 @@ impl ActivePool {
         }
     }
 
-    fn evict_one(&mut self) {
-        // Find oldest activity.
-        // NOTE: Technical Report says "NEVER evict Neighbors in Routing Table".
-        // Ideally we pass the RoutingTable here or keep a whitelist.
-        // For strict isolation, we will just evict the absolute oldest for now. 
-        // Real implementation should integrity check with DHT. 
-        // We will assume the caller manages high-level protection or we accept minor imperfection for "No TODO" rigidity.
-        // Actually, let's just remove the oldest.
+    fn evict_one(&mut self, protected: &[String]) {
+        // Find oldest activity that is NOT protected.
+        // Eviction Policy: LRU (Least Recently Used) with Whitelist.
         
         let mut oldest_onion = String::new();
-        let mut oldest_time = Instant::now();
+        let mut oldest_time = Instant::now() + std::time::Duration::from_secs(3600); // Future
         
         for (k, v) in &self.last_activity {
+            // SKIP if Protected
+            if protected.contains(k) { continue; }
+            
             if *v < oldest_time {
                 oldest_time = *v;
                 oldest_onion = k.clone();
@@ -109,6 +108,16 @@ impl ActivePool {
         if !oldest_onion.is_empty() {
              self.streams.remove(&oldest_onion);
              self.last_activity.remove(&oldest_onion);
+        } else {
+            // All candidates are protected?
+            // Fallback: Evict oldest even if protected (Safety Valve to prevent deadlock)
+            // Or log warning.
+            // Requirement says "NEVER". We will do nothing and let the pool grow slightly or reject?
+            // Current strict impl: Do nothing. (Pool overflow by 1 temporarily is better than breaking DHT).
+            // Actually, if we don't evict, we just don't add the new one?
+            // Wait, we add at the end of send_msg regardless.
+            // So we might go over MAX_POOL_SIZE.
+            // That's acceptable for "NEVER break DHT".
         }
     }
 }

